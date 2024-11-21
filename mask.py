@@ -5,7 +5,7 @@ import keyboard
 import time
 import winsound
 
-def get_compare_image(img, top_left, bottom_right, threshold=127):
+def get_cropped_gray_thresh_image(img, top_left, bottom_right, threshold=127):
     img = img[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     if threshold > 0:
@@ -14,8 +14,8 @@ def get_compare_image(img, top_left, bottom_right, threshold=127):
     
 
 def is_imgs_match(img, example_img_compare, top_left, bottom_right, diff_threshold=2000, threshold=127):
-    planted_test = get_compare_image(img, top_left, bottom_right, threshold)
-    difference = cv2.absdiff(example_img_compare, planted_test)
+    img = get_cropped_gray_thresh_image(img, top_left, bottom_right, threshold)
+    difference = cv2.absdiff(example_img_compare, img)
     difference_value = np.sum(difference) / 255
     
     #print(f"Difference value: {difference_value}")
@@ -33,7 +33,6 @@ def is_imgs_match(img, example_img_compare, top_left, bottom_right, diff_thresho
 def main():
     events = {
         "planted":{
-            "name": "planted",
             "last_time": 0,
             "sound": "./sounds/planted.wav",
             "message": "!!!Bomb has been planted!!!",
@@ -46,7 +45,6 @@ def main():
             "delay": 4
         },
         "win":{
-            "name": "win",
             "last_time": 0,
             "sound": "./sounds/win.wav",
             "message": "!!!Win!!!",
@@ -59,7 +57,6 @@ def main():
             "delay": 10
         },
         "kill1":{
-            "name": "kill1",
             "last_time": 0,
             "sound": "./sounds/kill.wav",
             "message": "!!!1st kill!!!",
@@ -73,11 +70,17 @@ def main():
         }
     }
     
-    in_game = True
+
     for event_name, event in events.items():
-        
-        example_img = cv2.imread(event["example_img"])
-        compare_img = get_compare_image(example_img, event["top_left"], event["bottom_right"], event["threshold"])
+        top_left = event["top_left"]
+        bottom_right = event["bottom_right"]
+        threshold = event["threshold"]
+        example_img_path = event["example_img"]
+
+        example_img = cv2.imread(example_img_path)
+        if example_img.shape != (1440, 2560, 3):
+            example_img = cv2.resize(example_img, (2560, 1440))
+        compare_img = get_cropped_gray_thresh_image(example_img, top_left, bottom_right, threshold)
         events[event_name]["image"] = compare_img
 
     #cv2.imshow("result", example_win_compare_img)
@@ -87,23 +90,25 @@ def main():
         current_time = time.time()
         img = pyautogui.screenshot()
         img = np.array(img)
-        if in_game:
+        if img.shape != (1440, 2560, 3):
             img = cv2.resize(img, (2560, 1440))
-            
+        
         for event_name, event in events.items():
-            image = event["image"]
+            event_image = event["image"]
             top_left = event["top_left"]
             bottom_right = event["bottom_right"]
             diff_threshold = event["diff_threshold"]
             threshold = event["threshold"]
             delay = event["delay"]
+            sound = event["sound"]
+            message = event["message"]
             
-            is_match = is_imgs_match(img, image, top_left, bottom_right, diff_threshold, threshold)
+            is_match = is_imgs_match(img, event_image, top_left, bottom_right, diff_threshold, threshold)
             enough_time_passed = (current_time - event["last_time"] > delay)
             if is_match and enough_time_passed:
-                print(event["message"])
-                events[event["name"]]["last_time"] = current_time
-                winsound.PlaySound(event["sound"], winsound.SND_ASYNC | winsound.SND_FILENAME)
+                print(message)
+                events[event_name]["last_time"] = current_time
+                winsound.PlaySound(sound, winsound.SND_ASYNC | winsound.SND_FILENAME)
             
         
 if __name__ == "__main__":
