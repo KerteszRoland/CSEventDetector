@@ -31,39 +31,55 @@ def is_imgs_match(img, example_img_compare, top_left, bottom_right, diff_thresho
 
 
 def main():
-    # Bomb planted
-    planted_top_left = (1012, 1070)
-    planted_bottom_right = (1547, 1149)
-    
-    # Win
-    win_top_left = (880, 250)
-    win_bottom_right = (1740, 360)
-    
-    # 1st kill 1215
-    kill1_top_left = (1150, 1200)
-    kill1__bottom_right = (1325, 1332)
+    events = {
+        "planted":{
+            "name": "planted",
+            "last_time": 0,
+            "sound": "./sounds/planted.wav",
+            "message": "!!!Bomb has been planted!!!",
+            "example_img": "./images/planted_example.png",
+            "image": None,
+            "top_left": (1012, 1070),
+            "bottom_right": (1547, 1149),
+            "threshold": 127,
+            "diff_threshold": 1000,
+            "delay": 4
+        },
+        "win":{
+            "name": "win",
+            "last_time": 0,
+            "sound": "./sounds/win.wav",
+            "message": "!!!Win!!!",
+            "example_img": "./images/win_example.png",
+            "image": None,
+            "top_left": (880, 250),
+            "bottom_right": (1740, 360),
+            "threshold": 0,
+            "diff_threshold": 5000,
+            "delay": 10
+        },
+        "kill1":{
+            "name": "kill1",
+            "last_time": 0,
+            "sound": "./sounds/kill.wav",
+            "message": "!!!1st kill!!!",
+            "example_img": "./images/kill1_example.png",
+            "image": None,
+            "top_left": (1150, 1200),
+            "bottom_right": (1325, 1332),
+            "threshold": 180,
+            "diff_threshold": 2000,
+            "delay": 0.5
+        }
+    }
     
     in_game = True
-    
-    last_planted_time = 0
-    planted_delay = 4  # seconds
-    
-    last_win_time = 0
-    win_delay = 10  # seconds
-    win_threshold = 0
-    
-    last_kill1_time = 0
-    kill1_delay = 0.5  # seconds
-    kill1_threshold = 180
-    
-    example_planted_img = cv2.imread("planted_example.png")
-    example_planted_compare_img = get_compare_image(example_planted_img, planted_top_left, planted_bottom_right, 127)
+    for event_name, event in events.items():
+        
+        example_img = cv2.imread(event["example_img"])
+        compare_img = get_compare_image(example_img, event["top_left"], event["bottom_right"], event["threshold"])
+        events[event_name]["image"] = compare_img
 
-    example_win_img = cv2.imread("win_example.png")
-    example_win_compare_img = get_compare_image(example_win_img, win_top_left, win_bottom_right, win_threshold)
-
-    example_kill1_img = cv2.imread("kill1_example.png")
-    example_kill1_compare_img = get_compare_image(example_kill1_img, kill1_top_left, kill1__bottom_right, kill1_threshold)
     #cv2.imshow("result", example_win_compare_img)
     #cv2.waitKey(0)
 
@@ -73,25 +89,22 @@ def main():
         img = np.array(img)
         if in_game:
             img = cv2.resize(img, (2560, 1440))
-        is_planted = is_imgs_match(img, example_planted_compare_img, planted_top_left, planted_bottom_right, 1000, 127)
-        is_win = is_imgs_match(img, example_win_compare_img, win_top_left, win_bottom_right, 5000, win_threshold)
-        is_kill1 = is_imgs_match(img, example_kill1_compare_img, kill1_top_left, kill1__bottom_right, 2000, kill1_threshold)
-        
-        if is_planted and (current_time - last_planted_time > planted_delay):
-            print("\n!!!Bomb has been planted!!!\n")
-            winsound.PlaySound("planted.wav", winsound.SND_ASYNC | winsound.SND_FILENAME)
-            last_planted_time = current_time
             
-        if is_win and (current_time - last_win_time > win_delay):
-            print("\n!!!Win!!!\n")
-            winsound.PlaySound("win.wav", winsound.SND_ASYNC | winsound.SND_FILENAME)
-            last_win_time = current_time
-        
-        if is_kill1 and (current_time - last_kill1_time > kill1_delay):
-            print("\n!!!1st kill!!!\n")
-            winsound.PlaySound("kill.wav", winsound.SND_ASYNC | winsound.SND_FILENAME)
-            last_kill1_time = current_time
-        #time.sleep(0.25)
+        for event_name, event in events.items():
+            image = event["image"]
+            top_left = event["top_left"]
+            bottom_right = event["bottom_right"]
+            diff_threshold = event["diff_threshold"]
+            threshold = event["threshold"]
+            delay = event["delay"]
+            
+            is_match = is_imgs_match(img, image, top_left, bottom_right, diff_threshold, threshold)
+            enough_time_passed = (current_time - event["last_time"] > delay)
+            if is_match and enough_time_passed:
+                print(event["message"])
+                events[event["name"]]["last_time"] = current_time
+                winsound.PlaySound(event["sound"], winsound.SND_ASYNC | winsound.SND_FILENAME)
+            
         
 if __name__ == "__main__":
     main()
