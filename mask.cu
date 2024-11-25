@@ -34,7 +34,7 @@ struct Event {
     int top_left[2];
     int bottom_right[2];
     unsigned char threshold;
-    float diff_threshold;
+    int diff_threshold;
     float delay;
 };
 
@@ -126,12 +126,12 @@ __global__ void calculateDifference(
     const unsigned char* img1,
     const unsigned char* img2,
     const int size,
-    float* difference
+    int* difference
 ) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size) return;
     
-    const float diff = fabsf((float)img1[idx] - (float)img2[idx]) / 255.0f;
+    const float diff = abs((int)img1[idx] - (int)img2[idx]);
     atomicAdd(difference, diff);
 }
 
@@ -263,7 +263,7 @@ bool isImgsMatch(
     int full_width,
     int* top_left,
     int* bottom_right,
-    float diff_threshold,
+    int diff_threshold,
     unsigned char threshold
 ) {
     if (DEBUG_MODE) {
@@ -289,7 +289,7 @@ bool isImgsMatch(
     printf("Full width: %d\n", full_width);
     printf("Coordinates: [%d,%d] to [%d,%d]\n", 
            top_left[0], top_left[1], bottom_right[0], bottom_right[1]);
-    printf("Threshold values - diff: %f, gray: %d\n", diff_threshold, threshold);
+    printf("Threshold values - diff: %d, gray: %d\n", diff_threshold, threshold);
     }
     int crop_width = bottom_right[0] - top_left[0];
     int crop_height = bottom_right[1] - top_left[1];
@@ -309,10 +309,10 @@ bool isImgsMatch(
         printf("Crop dimensions: %dx%d (size: %d)\n", crop_width, crop_height, size);
     }
     
-    // Allocate memory for processed image
     if (DEBUG_MODE) {
         printf("Allocating memory for processed image (%d bytes)...\n", size);
     }
+    // Allocate memory for processed image
     unsigned char* processed_img = (unsigned char*)malloc(size);
     if (!processed_img) {
         printf("Error: Failed to allocate memory for processed image\n");
@@ -338,12 +338,11 @@ bool isImgsMatch(
         return false;
     }
 
-    // Calculate difference with normalization
     if (DEBUG_MODE) {
         printf("Calculating difference...\n");
     }
 
-    float difference = 0.0f;
+    int difference = 0;
     char debug_filename[256];
     snprintf(debug_filename, sizeof(debug_filename), "./images/debug/%s.png", "example_img");
     saveImage(debug_filename, example_img, crop_width, crop_height, true);
@@ -354,15 +353,15 @@ bool isImgsMatch(
         float pixel_diff = abs((int)processed_img[i] - (int)example_img[i]);
         difference += pixel_diff;
     }
-    difference /= 255.0f;
+    difference = (int)(difference / 255.0f);
     
     free(processed_img);
     if (DEBUG_MODE) {
-    printf("Difference calculated: %f (threshold: %f, pixels: %d)\n", 
-           difference, diff_threshold, size);
+        printf("Difference calculated: %d (threshold: %d)\n", 
+        difference, diff_threshold);
     printf("=== End isImgsMatch ===\n");
     }
-    printf("%f %f\n", difference, diff_threshold);
+    printf("%d %d\n", difference, diff_threshold);
     return difference < diff_threshold;
 }
 
@@ -499,18 +498,7 @@ float getCurrentTime() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() / 1000.0f;
 }
 
-int main() {
-    printf("Program starting...\n");
-    printf("Initializing CUDA...\n");
-    
-    if (!initCUDA()) {
-        printf("Failed to initialize CUDA. Press Enter to exit...\n");
-        getchar();
-        return 1;
-    }
-    
-    printf("Screen resolution set to: %dx%d\n", SCREEN_WIDTH, SCREEN_HEIGHT);
-
+std::vector<Event> initEvents() {
     // Initialize events
     std::vector<Event> events = {
         {
@@ -522,7 +510,7 @@ int main() {
             {1012, 1070},
             {1547, 1149},
             127,
-            1000.0f,
+            1000,
             4.0f
         },
         {
@@ -534,7 +522,7 @@ int main() {
             {880, 250},
             {1740, 360},
             0,
-            5000.0f,
+            5000,
             10.0f
         },
         
@@ -547,13 +535,12 @@ int main() {
             {1150, 1200},
             {1325, 1332},
             180,
-            2000.0f,
+            2000,
             0.5f
         }
     };
 
     printf("Loading and processing example images...\n");
-    
     // Load and process example images
     for (auto& event : events) {
         int width, height;
@@ -561,7 +548,7 @@ int main() {
         unsigned char* example_img = loadImage(event.example_img_path, &width, &height);
         if (!example_img) {
             printf("Failed to load image: %s\n", event.example_img_path);
-            return 1;
+            throw std::runtime_error("Failed to load image");
         }
 
         printf("Loaded image dimensions: %dx%d\n", width, height);
@@ -574,7 +561,7 @@ int main() {
         if (!event.image) {
             printf("Failed to allocate memory for processed image\n");
             free(example_img);
-            return 1;
+            throw std::runtime_error("Failed to allocate memory for processed image");
         }
 
         if (!getCroppedGrayThreshImage(
@@ -588,9 +575,25 @@ int main() {
             printf("Failed to process example image\n");
             free(example_img);
             free(event.image);
-            return 1;
+            throw std::runtime_error("Failed to process example image");
         }
     }
+    return events;
+}
+
+int main() {
+    printf("Program starting...\n");
+    printf("Initializing CUDA...\n");
+    
+    if (!initCUDA()) {
+        printf("Failed to initialize CUDA. Press Enter to exit...\n");
+        getchar();
+            return 1;
+        }
+    
+    printf("Screen resolution set to: %dx%d\n", SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    std::vector<Event> events = initEvents();
 
     printf("Starting main loop. Press ESC to exit.\n");
 
