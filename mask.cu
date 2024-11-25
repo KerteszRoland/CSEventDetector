@@ -24,6 +24,7 @@
 
 // Structure to hold event data
 struct Event {
+    const char* name;
     float last_time;
     const char* message;
     const char* example_img_path;
@@ -492,6 +493,7 @@ int main() {
     // Initialize events
     std::vector<Event> events = {
         {
+            "PLANT",
             0.0f,
             "!!!Bomb has been planted!!!",
             "./images/planted_example.png",
@@ -503,6 +505,7 @@ int main() {
             4.0f
         },
         {
+            "WON",
             0.0f,
             "!!!Win!!!",
             "./images/win_example.png",
@@ -515,6 +518,7 @@ int main() {
         },
         
         {
+            "1KILL",
             0.0f,
             "!!!1st kill!!!",
             "./images/kill1_example.png",
