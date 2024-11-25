@@ -257,6 +257,20 @@ bool getCroppedGrayThreshImage(
     return true;
 }
 
+int getDifference(
+    unsigned char* processed_img,
+    unsigned char* example_img,
+    int size
+){
+    int difference = 0;
+    for (int i = 0; i < size; i++) {
+        float pixel_diff = abs((int)processed_img[i] - (int)example_img[i]);
+        difference += pixel_diff;
+    }
+    difference = (int)(difference / 255.0f);
+    return difference;
+}
+
 bool isImgsMatch(
     unsigned char* img,
     unsigned char* example_img,
@@ -342,19 +356,15 @@ bool isImgsMatch(
         printf("Calculating difference...\n");
     }
 
-    int difference = 0;
     char debug_filename[256];
     snprintf(debug_filename, sizeof(debug_filename), "./images/debug/%s.png", "example_img");
     saveImage(debug_filename, example_img, crop_width, crop_height, true);
-
-    saveImage("./images/debug/processed.png", processed_img, crop_width, crop_height, true);
-
-    for (int i = 0; i < size; i++) {
-        float pixel_diff = abs((int)processed_img[i] - (int)example_img[i]);
-        difference += pixel_diff;
-    }
-    difference = (int)(difference / 255.0f);
     
+    saveImage("./images/debug/processed.png", processed_img, crop_width, crop_height, true);
+    
+    int difference = getDifference(processed_img, example_img, size);
+
+
     free(processed_img);
     if (DEBUG_MODE) {
         printf("Difference calculated: %d (threshold: %d)\n", 
