@@ -123,16 +123,29 @@ __global__ void grayscaleAndThreshold(
 
 // CUDA kernel for image difference calculation
 __global__ void calculateDifference(
-    const unsigned char* img1,
-    const unsigned char* img2,
-    const int size,
-    int* difference
+    const unsigned char* d_processed_img,
+    const unsigned char* d_example_img,
+    int* d_difference,
+    const int size
 ) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size) return;
     
-    const float diff = abs((int)img1[idx] - (int)img2[idx]);
-    atomicAdd(difference, diff);
+    const int diff = abs((int)d_processed_img[idx] - (int)d_example_img[idx]);
+    atomicAdd(d_difference, diff);
+}
+
+// CUDA kernel for image difference calculation
+__global__ void isImgsMatchKernel(
+    unsigned char* img,
+    unsigned char* example_img,
+    int full_width,
+    int* top_left,
+    int* bottom_right,
+    int diff_threshold,
+    unsigned char threshold
+) {
+  
 }
 
 // Function implementation
@@ -263,13 +276,55 @@ int getDifference(
     int size
 ){
     int difference = 0;
+    int* d_difference;
+    unsigned char* d_processed_img;
+    unsigned char* d_example_img;
+
+    // Allocate device memory
+    cudaMalloc(&d_difference, sizeof(int));
+    cudaMalloc(&d_processed_img, size);
+    cudaMalloc(&d_example_img, size);
+
+    // Initialize difference to 0
+    cudaMemset(d_difference, 0, sizeof(int));
+
+    // Copy data to device
+    cudaMemcpy(d_processed_img, processed_img, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_example_img, example_img, size, cudaMemcpyHostToDevice);
+    
+    // Launch kernel with proper parameters
+    const int blockSize = 256;
+    const int numBlocks = (size + blockSize - 1) / blockSize;
+    calculateDifference<<<numBlocks, blockSize>>>(d_processed_img, d_example_img, d_difference, size);
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        printf("Kernel execution failed: %s\n", cudaGetErrorString(error));
+        cudaFree(d_difference);
+        cudaFree(d_processed_img);
+        cudaFree(d_example_img);
+        return -1;
+    }
+
+    // Copy result back
+    cudaMemcpy(&difference, d_difference, sizeof(int), cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_difference);
+    cudaFree(d_processed_img);
+    cudaFree(d_example_img);
+
+    /* 
+    // CPU version
     for (int i = 0; i < size; i++) {
         float pixel_diff = abs((int)processed_img[i] - (int)example_img[i]);
         difference += pixel_diff;
     }
+    */
     difference = (int)(difference / 255.0f);
     return difference;
 }
+
+
 
 bool isImgsMatch(
     unsigned char* img,
@@ -282,64 +337,58 @@ bool isImgsMatch(
 ) {
     if (DEBUG_MODE) {
         printf("\n=== isImgsMatch Debug Info ===\n");
+            // Validate input parameters
+        if (!img) {
+            printf("Error: Input image is null\n");
+            return false;
+        }
+        if (!example_img) {
+            printf("Error: Example image is null\n");
+            return false;
+        }
+        if (!top_left || !bottom_right) {
+            printf("Error: Coordinates are null\n");
+            return false;
+        }
+
+        printf("Input image pointer: %p\n", (void*)img);
+        printf("Example image pointer: %p\n", (void*)example_img);
+        printf("Full width: %d\n", full_width);
+        printf("Coordinates: [%d,%d] to [%d,%d]\n", 
+               top_left[0], top_left[1], bottom_right[0], bottom_right[1]);
+        printf("Threshold values - diff: %d, gray: %d\n", diff_threshold, threshold);
     }
-    
-    // Validate input parameters
-    if (!img) {
-        printf("Error: Input image is null\n");
-        return false;
-    }
-    if (!example_img) {
-        printf("Error: Example image is null\n");
-        return false;
-    }
-    if (!top_left || !bottom_right) {
-        printf("Error: Coordinates are null\n");
-        return false;
-    }
-    if (DEBUG_MODE) {
-    printf("Input image pointer: %p\n", (void*)img);
-    printf("Example image pointer: %p\n", (void*)example_img);
-    printf("Full width: %d\n", full_width);
-    printf("Coordinates: [%d,%d] to [%d,%d]\n", 
-           top_left[0], top_left[1], bottom_right[0], bottom_right[1]);
-    printf("Threshold values - diff: %d, gray: %d\n", diff_threshold, threshold);
-    }
+
     int crop_width = bottom_right[0] - top_left[0];
     int crop_height = bottom_right[1] - top_left[1];
     int size = crop_width * crop_height;
     
-    // Validate dimensions
-    if (crop_width <= 0 || crop_height <= 0) {
-        printf("Error: Invalid crop dimensions: %dx%d\n", crop_width, crop_height);
-        return false;
-    }
-    if (size <= 0) {
-        printf("Error: Invalid size: %d\n", size);
-        return false;
-    }
-    
     if (DEBUG_MODE) {
+            // Validate dimensions
+        if (crop_width <= 0 || crop_height <= 0) {
+            printf("Error: Invalid crop dimensions: %dx%d\n", crop_width, crop_height);
+            return false;
+        }
+        if (size <= 0) {
+            printf("Error: Invalid size: %d\n", size);
+            return false;
+        }
         printf("Crop dimensions: %dx%d (size: %d)\n", crop_width, crop_height, size);
-    }
-    
-    if (DEBUG_MODE) {
         printf("Allocating memory for processed image (%d bytes)...\n", size);
     }
+    
     // Allocate memory for processed image
     unsigned char* processed_img = (unsigned char*)malloc(size);
     if (!processed_img) {
         printf("Error: Failed to allocate memory for processed image\n");
         return false;
     }
+
     if (DEBUG_MODE) {
         printf("Processed image buffer allocated at: %p\n", (void*)processed_img);
-    }
-
-    // Process current screenshot
-    if (DEBUG_MODE) {
         printf("Calling getCroppedGrayThreshImage...\n");
     }
+
     if (!getCroppedGrayThreshImage(
             img,
             processed_img,
@@ -352,15 +401,12 @@ bool isImgsMatch(
         return false;
     }
 
-    if (DEBUG_MODE) {
-        printf("Calculating difference...\n");
+    if(DEBUG_MODE) {
+        char debug_filename[256];
+        snprintf(debug_filename, sizeof(debug_filename), "./images/debug/%s.png", "example_img");
+        saveImage(debug_filename, example_img, crop_width, crop_height, true);
+        saveImage("./images/debug/processed.png", processed_img, crop_width, crop_height, true);
     }
-
-    char debug_filename[256];
-    snprintf(debug_filename, sizeof(debug_filename), "./images/debug/%s.png", "example_img");
-    saveImage(debug_filename, example_img, crop_width, crop_height, true);
-    
-    saveImage("./images/debug/processed.png", processed_img, crop_width, crop_height, true);
     
     int difference = getDifference(processed_img, example_img, size);
 
