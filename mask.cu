@@ -12,9 +12,11 @@
 #include <windows.h>
 #endif
 
-// STB Image library for loading PNG files
+// STB Image library for loading/saving PNG files
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 // Add these constants at the top of the file, after the includes
 #define SCREEN_WIDTH 2560   // 2560p width
@@ -31,10 +33,34 @@ struct Event {
     unsigned char* image;
     int top_left[2];
     int bottom_right[2];
-    int threshold;
+    unsigned char threshold;
     float diff_threshold;
     float delay;
 };
+
+unsigned char* loadImage(const char* filename, int* width, int* height) {
+    int channels;
+    unsigned char* img = stbi_load(filename, width, height, &channels, 3);
+    if (!img) {
+        printf("Error loading image %s\n", filename);
+        return nullptr;
+    }
+    return img;
+}
+
+void saveImage(const char* filename, unsigned char* image, int width, int height, bool is_grayscale=true) {
+
+ if (!stbi_write_png(filename, 
+                     width, 
+                     height, 
+                     is_grayscale ? 1 : 3,  // 1 channel (grayscale) or 3 channels (RGB)
+                     image, 
+                     width * (is_grayscale ? 1 : 3))) {  // stride = width for grayscale
+     printf("Warning: Failed to save debug image: %s\n", filename);
+ } else {
+     printf("Saved debug image: %s\n", filename);
+ }
+}
 
 // Initialize CUDA in main before the main loop
 bool initCUDA() {
@@ -75,7 +101,7 @@ __global__ void grayscaleAndThreshold(
     unsigned char* output,
     const int width,
     const int height,
-    const int threshold
+    const unsigned char threshold
 ) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const int total_pixels = width * height;
@@ -92,7 +118,7 @@ __global__ void grayscaleAndThreshold(
                       0.114f * input[rgb_idx + 2];
     
     // Thresholding
-    output[idx] = (threshold > 0 && gray > threshold) ? 255 : (unsigned char)gray;
+    output[idx] = (threshold > 0 && gray > threshold) ? 255 : 0;
 }
 
 // CUDA kernel for image difference calculation
@@ -109,7 +135,6 @@ __global__ void calculateDifference(
     atomicAdd(difference, diff);
 }
 
-
 // Function implementation
 bool getCroppedGrayThreshImage(
     unsigned char* input,
@@ -117,7 +142,7 @@ bool getCroppedGrayThreshImage(
     int full_width,
     int* top_left,
     int* bottom_right,
-    int threshold
+    unsigned char threshold
 ) {
     if (DEBUG_MODE) {
     printf("Starting getCroppedGrayThreshImage...\n");
@@ -239,7 +264,7 @@ bool isImgsMatch(
     int* top_left,
     int* bottom_right,
     float diff_threshold,
-    int threshold
+    unsigned char threshold
 ) {
     if (DEBUG_MODE) {
         printf("\n=== isImgsMatch Debug Info ===\n");
@@ -317,12 +342,19 @@ bool isImgsMatch(
     if (DEBUG_MODE) {
         printf("Calculating difference...\n");
     }
+
     float difference = 0.0f;
+    char debug_filename[256];
+    snprintf(debug_filename, sizeof(debug_filename), "./images/debug/%s.png", "example_img");
+    saveImage(debug_filename, example_img, crop_width, crop_height, true);
+
+    saveImage("./images/debug/processed.png", processed_img, crop_width, crop_height, true);
 
     for (int i = 0; i < size; i++) {
-        float pixel_diff = fabsf((float)processed_img[i] - (float)example_img[i]) / 255.0f;
+        float pixel_diff = abs((int)processed_img[i] - (int)example_img[i]);
         difference += pixel_diff;
     }
+    difference /= 255.0f;
     
     free(processed_img);
     if (DEBUG_MODE) {
@@ -332,17 +364,6 @@ bool isImgsMatch(
     }
     printf("%f %f\n", difference, diff_threshold);
     return difference < diff_threshold;
-}
-
-// New function to load PNG image
-unsigned char* loadImage(const char* filename, int* width, int* height) {
-    int channels;
-    unsigned char* img = stbi_load(filename, width, height, &channels, 3);
-    if (!img) {
-        printf("Error loading image %s\n", filename);
-        return nullptr;
-    }
-    return img;
 }
 
 #ifdef _WIN32
@@ -501,7 +522,7 @@ int main() {
             {1012, 1070},
             {1547, 1149},
             127,
-            1200.0f,
+            1000.0f,
             4.0f
         },
         {
@@ -569,13 +590,28 @@ int main() {
             free(event.image);
             return 1;
         }
-
-        free(example_img);
-        printf("Successfully processed example image: %dx%d\n", crop_width, crop_height);
     }
 
     printf("Starting main loop. Press ESC to exit.\n");
-    
+
+    const char* check_image_path = "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/PLANT/frame_318.691.png";
+    int check_width, check_height;
+    unsigned char* check_image = loadImage(check_image_path, &check_width, &check_height);
+
+    Event event = events[0];
+        bool is_match = isImgsMatch(
+            check_image,
+            event.image,
+            check_width,
+            event.top_left,
+            event.bottom_right,
+            event.diff_threshold,
+            event.threshold
+        );
+    printf("%s: %s\n", event.name, is_match ? "true" : "false");
+
+
+    /*
     bool running = true;
     int errorCount = 0;
     const int MAX_ERRORS = 5;
@@ -633,14 +669,14 @@ int main() {
                 running = false;
             }
             
-            // std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
         catch (const std::exception& e) {
             printf("Main loop error: %s (%d/%d)\n", e.what(), ++errorCount, MAX_ERRORS);
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
-    
+    */
     // Cleanup and exit
     cudaDeviceReset();
     return 0;
