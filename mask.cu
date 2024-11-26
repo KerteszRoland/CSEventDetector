@@ -385,6 +385,15 @@ bool isImgsMatch(
         cudaFree(d_difference);
         cudaFree(d_output);
 
+        if(true || DEBUG_MODE){
+            // Save debug images
+            char debug_filename[256];
+            snprintf(debug_filename, sizeof(debug_filename), "./images/debug/%s.png", "example_img");
+            saveImage(debug_filename, example_img, crop_width, crop_height, true);
+            saveImage("./images/debug/processed.png", output, crop_width, crop_height, true);
+            printf("%d %d\n", difference, diff_threshold);
+        }
+
         free(output);
         free(processed_img);
         return difference < diff_threshold;
@@ -482,6 +491,26 @@ bool isEventMatch(
     );
 }
 
+bool testEventWithImage(const std::vector<Event>& events, const char* event_name, const std::string& image_path) {
+    // Test event matching on a single image
+    const Event& event = *std::find_if(events.begin(), events.end(), 
+        [event_name](const Event& e) { return strcmp(e.name, event_name) == 0; });
+
+    int width, height;
+    unsigned char* test_image = loadImage(image_path.c_str(), &width, &height);
+    if (!test_image) {
+        printf("Failed to load image: %s\n", image_path.c_str());
+        return "";
+    }
+
+    bool matched = isEventMatch(test_image, event);
+    free(test_image);
+    
+    printf("Matched: %s\n", matched ? "MATCHED" : "NOT MATCHED");
+
+    return matched;
+}
+
 const std::vector<std::string> testEventWithImages(const std::vector<Event>& events, const char* event_name, const std::string& test_dir_prefix) {
     // Test event matching on a directory of images
     const Event& event = *std::find_if(events.begin(), events.end(), 
@@ -516,12 +545,68 @@ const std::vector<std::string> testEventWithImages(const std::vector<Event>& eve
         if(!matched) {
             notMatchedPaths.push_back(image_path);
         }
+        free(test_image);
     }
-    free(test_image);
 
-    printf("Not matched images:\n");
-    for (const auto& path : notMatchedPaths) {
-        printf("%s\n", path.c_str());
+    // Create examples directory if it doesn't exist
+    std::string examples_dir = "./images/examples/" + std::string(event_name) + "/";
+    CreateDirectory("./images", NULL);
+    CreateDirectory("./images/examples", NULL);
+    CreateDirectory(examples_dir.c_str(), NULL);
+
+    printf("\nManual filtering of not matched images:\n");
+    printf("Press ENTER to keep image, BACKSPACE to skip\n");
+
+    char fullPath[MAX_PATH];
+    for (size_t i = 0; i < notMatchedPaths.size(); i++) {
+        const auto& path = notMatchedPaths[i];
+        const std::string window_title = path.substr(path.find_last_of("/\\") + 1);
+        
+        // Get the full path
+        if (GetFullPathNameA(path.c_str(), MAX_PATH, fullPath, nullptr) == 0) {
+            printf("Error getting full path for: %s\n", path.c_str());
+            continue;
+        }
+        
+        // Open the image using the default image viewer
+        HINSTANCE result = ShellExecuteA(
+            NULL,           // No parent window
+            "open",         // Operation
+            fullPath,       // File path
+            NULL,          // Parameters
+            NULL,          // Working directory
+            SW_SHOWMAXIMIZED  // Show window maximized (fullscreen)
+        );
+        
+        printf("Reviewing: %s (%zu/%zu)\n", path.c_str(), i + 1, notMatchedPaths.size());
+        
+        bool validKey = false;
+        while (!validKey) {
+            if (GetAsyncKeyState(VK_RETURN) & 0x8000) {  // ENTER key
+                // Copy file to examples directory
+                std::string filename = path.substr(path.find_last_of("/\\") + 1);
+                std::string dest_path = "./images/examples/" + std::string(event_name) + "/" + filename;
+                if (CopyFileA(fullPath, dest_path.c_str(), FALSE)) {
+                    printf("Copied to: %s\n", dest_path.c_str());
+                } else {
+                    printf("Failed to copy file. Error: %lu\n", GetLastError());
+                }
+                validKey = true;
+                Sleep(200);
+            }
+            else if (GetAsyncKeyState(VK_BACK) & 0x8000) {  // BACKSPACE key
+                printf("Skipped\n");
+                validKey = true;
+                Sleep(200);
+            }
+            Sleep(10);
+        }
+
+        // Close the image viewer window
+        HWND hwnd = FindWindowA(NULL, window_title.c_str());
+        if (hwnd != NULL) {
+            PostMessage(hwnd, WM_CLOSE, 0, 0);
+        }
     }
 
     return notMatchedPaths;
@@ -541,9 +626,8 @@ int main() {
 
     std::vector<Event> events = initEvents();
     
-    std::vector<std::string> notMatchedPaths = testEventWithImages(events, "PLANT", "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/");
-    
-
+    //std::vector<std::string> notMatchedPaths = testEventWithImages(events, "PLANT", "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/");
+    bool result = testEventWithImage(events, "PLANT", "./images/planted_example.png");
     
 
     /*
