@@ -10,6 +10,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")  // Link with winmm.lib
 #endif
 
 
@@ -29,6 +31,7 @@ struct Event {
     float last_time;
     const char* message;
     const char* example_img_path;
+    const char* sound_path;
     unsigned char* image;
     const int top_left[2];
     const int bottom_right[2];
@@ -151,7 +154,15 @@ unsigned char* captureScreen(int* width, int* height) {
 
     return pixels;
 }
+
+void playSound(const char* sound_path) {
+    if (!PlaySoundA(sound_path, NULL, SND_FILENAME | SND_ASYNC)) {
+        printf("Error playing sound: %lu\n", GetLastError());
+    }
+}
 #endif
+
+
 
 float getCurrentTime() {
     auto now = std::chrono::high_resolution_clock::now();
@@ -371,6 +382,7 @@ std::vector<Event> initEvents() {
             0.0f,
             "!!!Bomb has been planted!!!",
             "./images/planted_example.png",
+            "./sounds/planted.wav",
             nullptr,
             {1012, 1070},
             {1547, 1149},
@@ -382,12 +394,13 @@ std::vector<Event> initEvents() {
             "WON",
             0.0f,
             "!!!Win!!!",
-            "./images/win_example.png",
+            "./images/won_example.png",
+            "./sounds/won.wav",
             nullptr,
             {880, 250},
             {1740, 360},
-            0,
-            5000,
+            127,
+            3000,
             10.0f
         },
         {
@@ -395,6 +408,7 @@ std::vector<Event> initEvents() {
             0.0f,
             "!!!1st kill!!!",
             "./images/kill1_example.png",
+            "./sounds/kill1.wav",
             nullptr,
             {1150, 1200},
             {1325, 1332},
@@ -622,6 +636,9 @@ void detectEventsOnScreen(std::vector<Event>& events) {
                     float time_since_last = current_time - event.last_time;
                     if (time_since_last > event.delay) {
                         printf("%s\n", event.message);
+                        if (event.sound_path != nullptr) {
+                            playSound(event.sound_path);
+                        }
                         event.last_time = current_time;
                     }
                 }
@@ -657,9 +674,9 @@ int main() {
     std::vector<Event> events = initEvents();
 
     //testEventWithImage(events, "PLANT", "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/PLANT/frame_318.641.png");
-    std::pair<std::vector<std::string>, std::vector<int>> notMatched = testEventWithImages(events, "1KILL", "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/");
-    pickNewGoodExamples("1KILL", notMatched.first, notMatched.second);
-    //detectEventsOnScreen(events);
+    //std::pair<std::vector<std::string>, std::vector<int>> notMatched = testEventWithImages(events, "1KILL", "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/");
+    //pickNewGoodExamples("1KILL", notMatched.first, notMatched.second);
+    detectEventsOnScreen(events);
 
     // Cleanup and exit
     for (auto& event : events) {
