@@ -31,8 +31,8 @@ struct Event {
     const char* message;
     const char* example_img_path;
     unsigned char* image;
-    int top_left[2];
-    int bottom_right[2];
+    const int top_left[2];
+    const int bottom_right[2];
     unsigned char threshold;
     int diff_threshold;
     float delay;
@@ -48,7 +48,7 @@ unsigned char* loadImage(const char* filename, int* width, int* height) {
     return img;
 }
 
-void saveImage(const char* filename, unsigned char* image, int width, int height, bool is_grayscale=true) {
+void saveImage(const char* filename, const unsigned char* image, int width, int height, bool is_grayscale=true) {
 
  if (!stbi_write_png(filename, 
                      width, 
@@ -95,7 +95,7 @@ bool initCUDA() {
 }
 
 __global__ void grayscaleThresholdDifferenceKernel(
-    unsigned char* input,
+    const unsigned char* input,
     unsigned char* output,
     const int width,
     const int height,
@@ -127,7 +127,7 @@ __global__ void grayscaleThresholdDifferenceKernel(
     atomicAdd(d_difference, diff);
 }
 
-void cropImage(unsigned char* input, unsigned char* output, int full_width, int* top_left, int* bottom_right) {
+void cropImage(const unsigned char* input, unsigned char* output, const int full_width, const int* top_left, const int* bottom_right) {
     int crop_width = bottom_right[0] - top_left[0];
     int crop_height = bottom_right[1] - top_left[1];
 
@@ -147,12 +147,12 @@ void cropImage(unsigned char* input, unsigned char* output, int full_width, int*
 
 // Function implementation
 void getCroppedGrayThreshImage(
-    unsigned char* input,
+    const unsigned char* input,
     unsigned char* output,
-    int full_width,
-    int* top_left,
-    int* bottom_right,
-    unsigned char threshold
+    const int full_width,
+    const int* top_left,
+    const int* bottom_right,
+    const unsigned char threshold
 ) {
     int crop_width = bottom_right[0] - top_left[0];
     int crop_height = bottom_right[1] - top_left[1];
@@ -191,13 +191,13 @@ void getCroppedGrayThreshImage(
 }
 
 bool isImgsMatch(
-    unsigned char* img,
-    unsigned char* example_img,
-    int full_width,
-    int* top_left,
-    int* bottom_right,
-    int diff_threshold,
-    unsigned char threshold
+    const unsigned char* img,
+    const unsigned char* example_img,
+    const int full_width,
+    const int* top_left,
+    const int* bottom_right,
+    const int diff_threshold,
+    const unsigned char threshold
 ) {
     int crop_width = bottom_right[0] - top_left[0];
     int crop_height = bottom_right[1] - top_left[1];
@@ -462,6 +462,21 @@ std::vector<Event> initEvents() {
     return events;
 }
 
+bool isEventMatch(
+    const unsigned char* img,
+    const Event& event
+){
+    return isImgsMatch(
+        img,
+        event.image,
+        SCREEN_WIDTH,
+        event.top_left,
+        event.bottom_right,
+        event.diff_threshold,
+        event.threshold
+    );
+}
+
 int main() {
     printf("Program starting...\n");
     printf("Initializing CUDA...\n");
@@ -484,17 +499,10 @@ int main() {
     unsigned char* check_image = loadImage(check_image_path, &check_width, &check_height);
 
     Event event = events[0];
-        bool is_match = isImgsMatch(
-            check_image,
-            event.image,
-            check_width,
-            event.top_left,
-            event.bottom_right,
-            event.diff_threshold,
-            event.threshold
-        );
-    printf("%s: %s\n", event.name, is_match ? "true" : "false");
-
+    bool is_match = isEventMatch(check_image, event);
+    if (is_match) {
+        printf("%s\n", event.message);
+    }
 
     /*
     bool running = true;
