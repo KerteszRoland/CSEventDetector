@@ -32,9 +32,9 @@ struct Event {
     unsigned char* image;
     const int top_left[2];
     const int bottom_right[2];
-    unsigned char threshold;
-    int diff_threshold;
-    float delay;
+    const unsigned char threshold;
+    const int diff_threshold;
+    const float delay;
 };
 
 unsigned char* loadImage(const char* filename, int* width, int* height) {
@@ -56,8 +56,6 @@ void saveImage(const char* filename, const unsigned char* image, int width, int 
                      image, 
                      width * (is_grayscale ? 1 : 3))) {  // stride = width for grayscale
      printf("Warning: Failed to save debug image: %s\n", filename);
- } else {
-     printf("Saved debug image: %s\n", filename);
  }
 }
 
@@ -66,19 +64,12 @@ unsigned char* captureScreen(int* width, int* height) {
     // Use the constants instead of GetSystemMetrics
     *width = SCREEN_WIDTH;   // 2560
     *height = SCREEN_HEIGHT; // 1440
-    
-    if (DEBUG_MODE) {
-        printf("Attempting to capture screen %dx%d\n", *width, *height);
-    }
 
     // Create device context and bitmap
     HDC hScreenDC = GetDC(NULL);
     if (!hScreenDC) {
         printf("Error: GetDC failed with error code %lu\n", GetLastError());
         return nullptr;
-    }
-    if (DEBUG_MODE) {
-        printf("GetDC successful\n");
     }
 
     HDC hMemoryDC = CreateCompatibleDC(hScreenDC);
@@ -87,9 +78,6 @@ unsigned char* captureScreen(int* width, int* height) {
         ReleaseDC(NULL, hScreenDC);
         return nullptr;
     }
-    if (DEBUG_MODE) {
-        printf("CreateCompatibleDC successful\n");
-    }
 
     HBITMAP hBitmap = CreateCompatibleBitmap(hScreenDC, *width, *height);
     if (!hBitmap) {
@@ -97,9 +85,6 @@ unsigned char* captureScreen(int* width, int* height) {
         DeleteDC(hMemoryDC);
         ReleaseDC(NULL, hScreenDC);
         return nullptr;
-    }
-    if (DEBUG_MODE) {
-        printf("CreateCompatibleBitmap successful\n");
     }
 
     HBITMAP hOldBitmap = (HBITMAP)SelectObject(hMemoryDC, hBitmap);
@@ -110,9 +95,6 @@ unsigned char* captureScreen(int* width, int* height) {
         ReleaseDC(NULL, hScreenDC);
         return nullptr;
     }
-    if (DEBUG_MODE) {
-        printf("SelectObject successful\n");
-    }
 
     // Copy screen to bitmap
     if (!BitBlt(hMemoryDC, 0, 0, *width, *height, hScreenDC, 0, 0, SRCCOPY)) {
@@ -122,9 +104,6 @@ unsigned char* captureScreen(int* width, int* height) {
         DeleteDC(hMemoryDC);
         ReleaseDC(NULL, hScreenDC);
         return nullptr;
-    }
-    if (DEBUG_MODE) {
-        printf("BitBlt successful\n");
     }
 
     // Get bitmap info
@@ -139,9 +118,6 @@ unsigned char* captureScreen(int* width, int* height) {
 
     // Calculate stride (bytes per row, must be DWORD-aligned)
     int stride = (*width * 3 + 3) & ~3;
-    if (DEBUG_MODE) {
-        printf("Allocating %d bytes for image data\n", stride * *height);
-    }
 
     // Allocate memory for pixel data
     unsigned char* pixels = (unsigned char*)malloc(stride * *height);
@@ -152,9 +128,6 @@ unsigned char* captureScreen(int* width, int* height) {
         DeleteDC(hMemoryDC);
         ReleaseDC(NULL, hScreenDC);
         return nullptr;
-    }
-    if (DEBUG_MODE) {
-        printf("Memory allocation successful\n");
     }
 
     // Get pixel data
@@ -169,9 +142,6 @@ unsigned char* captureScreen(int* width, int* height) {
         ReleaseDC(NULL, hScreenDC);
         return nullptr;
     }
-    if (DEBUG_MODE) {
-        printf("GetDIBits successful\n");
-    }
 
     // Cleanup
     SelectObject(hMemoryDC, hOldBitmap);
@@ -179,9 +149,6 @@ unsigned char* captureScreen(int* width, int* height) {
     DeleteDC(hMemoryDC);
     ReleaseDC(NULL, hScreenDC);
 
-    if (DEBUG_MODE) {
-        printf("Screen capture completed successfully\n");
-    }
     return pixels;
 }
 #endif
@@ -326,7 +293,8 @@ bool isImgsMatch(
     const int* top_left,
     const int* bottom_right,
     const int diff_threshold,
-    const unsigned char threshold
+    const unsigned char threshold,
+    int* output_difference = nullptr
 ) {
     int crop_width = bottom_right[0] - top_left[0];
     int crop_height = bottom_right[1] - top_left[1];
@@ -376,17 +344,22 @@ bool isImgsMatch(
     cudaFree(d_output);
 
 
-    // Save debug images
-    char debug_filename[256];
-    snprintf(debug_filename, sizeof(debug_filename), "./images/debug/%s.png", "example_img");
-    saveImage(debug_filename, example_img, crop_width, crop_height, true);
-    saveImage("./images/debug/processed.png", output, crop_width, crop_height, true);
+    if(DEBUG_MODE){
+        // Save debug images
+        char debug_filename[256];
+        snprintf(debug_filename, sizeof(debug_filename), "./images/debug/%s.png", "example_img");
+        saveImage(debug_filename, example_img, crop_width, crop_height, true);
+        saveImage("./images/debug/processed.png", output, crop_width, crop_height, true);
+    }
 
     free(output);
     free(processed_img);
     
     difference = difference / 255;
-    printf("%d %d\n", difference, diff_threshold);
+    if (output_difference != nullptr) {
+        *output_difference = difference;
+    }
+    if (DEBUG_MODE) printf("%d %d\n", difference, diff_threshold);
     return difference < diff_threshold;
 }
 
@@ -417,7 +390,6 @@ std::vector<Event> initEvents() {
             5000,
             10.0f
         },
-        
         {
             "1KILL",
             0.0f,
@@ -460,7 +432,8 @@ std::vector<Event> initEvents() {
 
 bool isEventMatch(
     const unsigned char* img,
-    const Event& event
+    const Event& event,
+    int* output_difference = nullptr
 ){
     return isImgsMatch(
         img,
@@ -469,7 +442,8 @@ bool isEventMatch(
         event.top_left,
         event.bottom_right,
         event.diff_threshold,
-        event.threshold
+        event.threshold,
+        output_difference
     );
 }
 
@@ -493,7 +467,7 @@ bool testEventWithImage(const std::vector<Event>& events, const char* event_name
     return matched;
 }
 
-const std::vector<std::string> testEventWithImages(const std::vector<Event>& events, const char* event_name, const std::string& test_dir_prefix) {
+std::pair<std::vector<std::string>, std::vector<int>> testEventWithImages(const std::vector<Event>& events, const char* event_name, const std::string& test_dir_prefix) {
     // Test event matching on a directory of images
     const Event& event = *std::find_if(events.begin(), events.end(), 
         [event_name](const Event& e) { return strcmp(e.name, event_name) == 0; });
@@ -513,6 +487,8 @@ const std::vector<std::string> testEventWithImages(const std::vector<Event>& eve
     printf("Found %zu images to test\n", image_files.size());
 
     std::vector<std::string> notMatchedPaths;
+    std::vector<int> notMatchedDifferences;
+
     int img_width, img_height;
     unsigned char* test_image = nullptr;
     for (const auto& image_path : image_files) {
@@ -522,14 +498,43 @@ const std::vector<std::string> testEventWithImages(const std::vector<Event>& eve
             printf("Failed to load image: %s\n", image_path.c_str());
             continue;
         }
-
-        bool matched = isEventMatch(test_image, event);
+        int* difference = (int*)malloc(sizeof(int));
+        bool matched = isEventMatch(test_image, event, difference);
         if(!matched) {
             notMatchedPaths.push_back(image_path);
+            notMatchedDifferences.push_back(*difference);
         }
+        free(difference);
         free(test_image);
     }
 
+    printf("Found %zu not matched images\n", notMatchedPaths.size());
+    for (size_t i = 0; i < notMatchedPaths.size(); i++) {
+        printf("%s (%d)\n", notMatchedPaths[i].c_str(), notMatchedDifferences[i]);
+    }
+
+    return std::make_pair(notMatchedPaths, notMatchedDifferences);
+}
+
+void pickNewGoodExamples(const char* event_name, const std::vector<std::string>& notMatchedPaths, const std::vector<int>& notMatchedDifferences) {
+    std::vector<int> filteredDifferences;
+    std::vector<std::string> filteredPaths;
+    
+    // Filter out very similar images
+    for (size_t i = 0; i < notMatchedDifferences.size(); i++) {
+        bool is_unique_with_margin = true;
+        for (size_t j = 0; j < filteredDifferences.size(); j++) {
+            if (abs(notMatchedDifferences[i] - filteredDifferences[j]) < 100) {
+                is_unique_with_margin = false;
+                break;
+            }
+        }
+        if (is_unique_with_margin) {
+            filteredDifferences.push_back(notMatchedDifferences[i]);
+            filteredPaths.push_back(notMatchedPaths[i]);
+        }
+    }
+    
     // Create examples directory if it doesn't exist
     std::string examples_dir = "./images/examples/" + std::string(event_name) + "/";
     CreateDirectory("./images", NULL);
@@ -539,9 +544,10 @@ const std::vector<std::string> testEventWithImages(const std::vector<Event>& eve
     printf("\nManual filtering of not matched images:\n");
     printf("Press ENTER to keep image, BACKSPACE to skip\n");
 
+
     char fullPath[MAX_PATH];
-    for (size_t i = 0; i < notMatchedPaths.size(); i++) {
-        const auto& path = notMatchedPaths[i];
+    for (size_t i = 0; i < filteredPaths.size(); i++) {
+        const auto& path = filteredPaths[i];
         const std::string window_title = path.substr(path.find_last_of("/\\") + 1);
         
         // Get the full path
@@ -560,7 +566,7 @@ const std::vector<std::string> testEventWithImages(const std::vector<Event>& eve
             SW_SHOWMAXIMIZED  // Show window maximized (fullscreen)
         );
         
-        printf("Reviewing: %s (%zu/%zu)\n", path.c_str(), i + 1, notMatchedPaths.size());
+        printf("Reviewing: %s (%zu/%zu)\n", path.c_str(), i + 1, filteredPaths.size());
         
         bool validKey = false;
         while (!validKey) {
@@ -591,7 +597,49 @@ const std::vector<std::string> testEventWithImages(const std::vector<Event>& eve
         }
     }
 
-    return notMatchedPaths;
+}
+
+void detectEventsOnScreen(std::vector<Event>& events) {
+    bool running = true;
+    int errorCount = 0;
+    const int MAX_ERRORS = 5;
+    int width, height;
+    unsigned char* screenshot = nullptr;
+
+    printf("Starting main loop. Press ESC to exit.\n");
+    while (running && errorCount < MAX_ERRORS) {
+        try {
+            float current_time = getCurrentTime();
+            screenshot = captureScreen(&width, &height);
+
+            for (auto& event : events) {
+                bool is_match = isEventMatch(
+                    screenshot,
+                    event
+                );
+                
+                if (is_match) {
+                    float time_since_last = current_time - event.last_time;
+                    if (time_since_last > event.delay) {
+                        printf("%s\n", event.message);
+                        event.last_time = current_time;
+                    }
+                }
+            }
+          
+            if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+                printf("ESC pressed, exiting...\n");
+                running = false;
+            }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+        catch (const std::exception& e) {
+            printf("Main loop error: %s (%d/%d)\n", e.what(), ++errorCount, MAX_ERRORS);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+    }
+    free(screenshot);
 }
 
 int main() {
@@ -608,85 +656,11 @@ int main() {
 
     std::vector<Event> events = initEvents();
 
-    printf("Starting main loop. Press ESC to exit.\n");
+    //testEventWithImage(events, "PLANT", "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/PLANT/frame_318.641.png");
+    std::pair<std::vector<std::string>, std::vector<int>> notMatched = testEventWithImages(events, "1KILL", "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/");
+    pickNewGoodExamples("1KILL", notMatched.first, notMatched.second);
+    //detectEventsOnScreen(events);
 
-    const char* check_image_path = "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/PLANT/frame_318.691.png";
-    //const char* check_image_path = "./images/planted_example.png";
-    int check_width, check_height;
-    unsigned char* check_image = loadImage(check_image_path, &check_width, &check_height);
-
-    Event event = events[0];
-    bool is_match = isEventMatch(check_image, event);
-    if (is_match) {
-        printf("%s\n", event.message);
-    }
-
-    /*
-    bool running = true;
-    int errorCount = 0;
-    const int MAX_ERRORS = 5;
-
-    while (running && errorCount < MAX_ERRORS) {
-        try {
-            float current_time = getCurrentTime();
-
-            if (DEBUG_MODE) {
-                printf("\nAttempting screen capture...\n");
-            }
-            
-            int width, height;
-            unsigned char* screenshot = captureScreen(&width, &height);
-            if (!screenshot) {
-                printf("Screenshot capture failed (%d/%d)\n", ++errorCount, MAX_ERRORS);
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                continue;
-            }
-            if (DEBUG_MODE) {
-                printf("Processing events...\n");
-            }
-            for (auto& event : events) {
-                if (DEBUG_MODE) printf("\nChecking event: %s\n", event.message);
-                try {
-                    bool is_match = isImgsMatch(
-                        screenshot,
-                        event.image,
-                        width,
-                        event.top_left,
-                        event.bottom_right,
-                        event.diff_threshold,
-                        event.threshold
-                    );
-                    
-                    if (is_match) {
-                        float time_since_last = current_time - event.last_time;
-                        
-                        if (time_since_last > event.delay) {
-                            printf("%s\n", event.message);
-                            event.last_time = current_time;
-                        }
-                    }
-                }
-                catch (const std::exception& e) {
-                    printf("Event processing error: %s\n", e.what());
-                }
-            }
-            
-            free(screenshot);
-            errorCount = 0;
-            
-            if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-                printf("ESC pressed, exiting...\n");
-                running = false;
-            }
-            
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        }
-        catch (const std::exception& e) {
-            printf("Main loop error: %s (%d/%d)\n", e.what(), ++errorCount, MAX_ERRORS);
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        }
-    }
-    */
     // Cleanup and exit
     for (auto& event : events) {
         free(event.image);
