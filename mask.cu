@@ -7,24 +7,23 @@
 #include <vector>
 #include <stdexcept>
 
-// Windows-specific headers for screenshot
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
-// STB Image library for loading/saving PNG files
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-// Add these constants at the top of the file, after the includes
-#define SCREEN_WIDTH 2560   // 2560p width
-#define SCREEN_HEIGHT 1440  // 1440p height
+
+#define SCREEN_WIDTH 2560
+#define SCREEN_HEIGHT 1440 
 
 #define DEBUG_MODE false
 
-// Structure to hold event data
 struct Event {
     const char* name;
     float last_time;
@@ -62,9 +61,7 @@ void saveImage(const char* filename, const unsigned char* image, int width, int 
  }
 }
 
-
 #ifdef _WIN32
-// Function to capture screenshot on Windows
 unsigned char* captureScreen(int* width, int* height) {
     // Use the constants instead of GetSystemMetrics
     *width = SCREEN_WIDTH;   // 2560
@@ -189,7 +186,6 @@ unsigned char* captureScreen(int* width, int* height) {
 }
 #endif
 
-// Function to get current time in seconds with high precision
 float getCurrentTime() {
     auto now = std::chrono::high_resolution_clock::now();
     auto duration = now.time_since_epoch();
@@ -279,7 +275,6 @@ void cropImage(const unsigned char* input, unsigned char* output, const int full
     }
 }
 
-// Function implementation
 void getCroppedGrayThreshImage(
     const unsigned char* input,
     unsigned char* output,
@@ -478,6 +473,127 @@ bool isEventMatch(
     );
 }
 
+bool testEventWithImage(const std::vector<Event>& events, const char* event_name, const std::string& image_path) {
+    // Test event matching on a single image
+    const Event& event = *std::find_if(events.begin(), events.end(), 
+        [event_name](const Event& e) { return strcmp(e.name, event_name) == 0; });
+
+    int width, height;
+    unsigned char* test_image = loadImage(image_path.c_str(), &width, &height);
+    if (!test_image) {
+        printf("Failed to load image: %s\n", image_path.c_str());
+        return "";
+    }
+
+    bool matched = isEventMatch(test_image, event);
+    free(test_image);
+    
+    printf("Matched: %s\n", matched ? "MATCHED" : "NOT MATCHED");
+
+    return matched;
+}
+
+const std::vector<std::string> testEventWithImages(const std::vector<Event>& events, const char* event_name, const std::string& test_dir_prefix) {
+    // Test event matching on a directory of images
+    const Event& event = *std::find_if(events.begin(), events.end(), 
+        [event_name](const Event& e) { return strcmp(e.name, event_name) == 0; });
+
+    std::string test_dir = test_dir_prefix + event_name + "/";
+    std::vector<std::string> image_files;
+    
+    WIN32_FIND_DATA findData;
+    HANDLE hFind = FindFirstFile((test_dir + "*.png").c_str(), &findData);
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            image_files.push_back(test_dir + findData.cFileName);
+        } while (FindNextFile(hFind, &findData));
+        FindClose(hFind);
+    }
+
+    printf("Found %zu images to test\n", image_files.size());
+
+    std::vector<std::string> notMatchedPaths;
+    int img_width, img_height;
+    unsigned char* test_image = nullptr;
+    for (const auto& image_path : image_files) {
+        test_image = loadImage(image_path.c_str(), &img_width, &img_height);
+        
+        if (!test_image) {
+            printf("Failed to load image: %s\n", image_path.c_str());
+            continue;
+        }
+
+        bool matched = isEventMatch(test_image, event);
+        if(!matched) {
+            notMatchedPaths.push_back(image_path);
+        }
+        free(test_image);
+    }
+
+    // Create examples directory if it doesn't exist
+    std::string examples_dir = "./images/examples/" + std::string(event_name) + "/";
+    CreateDirectory("./images", NULL);
+    CreateDirectory("./images/examples", NULL);
+    CreateDirectory(examples_dir.c_str(), NULL);
+
+    printf("\nManual filtering of not matched images:\n");
+    printf("Press ENTER to keep image, BACKSPACE to skip\n");
+
+    char fullPath[MAX_PATH];
+    for (size_t i = 0; i < notMatchedPaths.size(); i++) {
+        const auto& path = notMatchedPaths[i];
+        const std::string window_title = path.substr(path.find_last_of("/\\") + 1);
+        
+        // Get the full path
+        if (GetFullPathNameA(path.c_str(), MAX_PATH, fullPath, nullptr) == 0) {
+            printf("Error getting full path for: %s\n", path.c_str());
+            continue;
+        }
+        
+        // Open the image using the default image viewer
+        HINSTANCE result = ShellExecuteA(
+            NULL,           // No parent window
+            "open",         // Operation
+            fullPath,       // File path
+            NULL,          // Parameters
+            NULL,          // Working directory
+            SW_SHOWMAXIMIZED  // Show window maximized (fullscreen)
+        );
+        
+        printf("Reviewing: %s (%zu/%zu)\n", path.c_str(), i + 1, notMatchedPaths.size());
+        
+        bool validKey = false;
+        while (!validKey) {
+            if (GetAsyncKeyState(VK_RETURN) & 0x8000) {  // ENTER key
+                // Copy file to examples directory
+                std::string filename = path.substr(path.find_last_of("/\\") + 1);
+                std::string dest_path = "./images/examples/" + std::string(event_name) + "/" + filename;
+                if (CopyFileA(fullPath, dest_path.c_str(), FALSE)) {
+                    printf("Copied to: %s\n", dest_path.c_str());
+                } else {
+                    printf("Failed to copy file. Error: %lu\n", GetLastError());
+                }
+                validKey = true;
+                Sleep(200);
+            }
+            else if (GetAsyncKeyState(VK_BACK) & 0x8000) {  // BACKSPACE key
+                printf("Skipped\n");
+                validKey = true;
+                Sleep(200);
+            }
+            Sleep(10);
+        }
+
+        // Close the image viewer window
+        HWND hwnd = FindWindowA(NULL, window_title.c_str());
+        if (hwnd != NULL) {
+            PostMessage(hwnd, WM_CLOSE, 0, 0);
+        }
+    }
+
+    return notMatchedPaths;
+}
+
 int main() {
     printf("Program starting...\n");
     printf("Initializing CUDA...\n");
@@ -504,7 +620,7 @@ int main() {
     if (is_match) {
         printf("%s\n", event.message);
     }
-    
+
     /*
     bool running = true;
     int errorCount = 0;
