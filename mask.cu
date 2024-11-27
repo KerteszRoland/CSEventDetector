@@ -25,6 +25,7 @@
 #define SCREEN_HEIGHT 1440 
 
 #define DEBUG_MODE false
+#define NO_SOUNDS true
 
 struct Event {
     const char* name;
@@ -636,8 +637,8 @@ void detectEventsOnScreen(std::vector<Event>& events) {
                     float time_since_last = current_time - event.last_time;
                     if (time_since_last > event.delay) {
                         printf("%s\n", event.message);
-                        if (event.sound_path != nullptr) {
-                            playSound(event.sound_path);
+                        if (!NO_SOUNDS && event.sound_path != nullptr) {
+                           playSound(event.sound_path);
                         }
                         event.last_time = current_time;
                     }
