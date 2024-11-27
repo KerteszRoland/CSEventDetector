@@ -25,8 +25,9 @@
 #define SCREEN_WIDTH 2560
 #define SCREEN_HEIGHT 1440 
 
-#define DEBUG_MODE false
+#define DEBUG_MODE true
 #define NO_SOUNDS true
+#define OVERLAY_ENABLED true
 
 struct Event {
     const char* name;
@@ -88,7 +89,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                     int topLeftY = y;
                     int bottomRightX = topLeftX*2 + textWidth;
                     int bottomRightY = topLeftY + 48;
+                    
+                    // Create and select red pen for border
+                    HPEN hRedPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
+                    HPEN hOldPen = (HPEN)SelectObject(hdc, hRedPen);
+                    
                     RoundRect(hdc, topLeftX, topLeftY, bottomRightX, bottomRightY, 20, 20);
+                    
+                    // Clean up red pen
+                    SelectObject(hdc, hOldPen);
+                    DeleteObject(hRedPen);
+                    
                     y += 60;
                 }
             }
@@ -127,6 +138,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 }
 
 void initOverlay() {
+    if (!OVERLAY_ENABLED) return;
     WNDCLASSEX wc = {0};
     wc.cbSize = sizeof(WNDCLASSEX);
     wc.lpfnWndProc = WindowProc;
@@ -161,12 +173,14 @@ void initOverlay() {
 }
 
 void addOverlayMessage(const char* message, float duration = 1.0f) {
+    if (!OVERLAY_ENABLED) return;
     OverlayText text = {message, duration, getCurrentTime()};
     activeMessages.push_back(text);
     InvalidateRect(overlayWindow, NULL, TRUE);
 }
 
 void updateOverlay() {
+    if (!OVERLAY_ENABLED) return;
      float currentTime = getCurrentTime();
      if (lastOverlayUpdated == 0.0f) {
         lastOverlayUpdated = currentTime;
@@ -699,7 +713,7 @@ void pickNewGoodExamples(const char* event_name, const std::vector<std::string>&
     printf("\nManual filtering of not matched images:\n");
     printf("Press ENTER to keep image, BACKSPACE to skip\n");
 
-
+    initOverlay();
     char fullPath[MAX_PATH];
     for (size_t i = 0; i < filteredPaths.size(); i++) {
         const auto& path = filteredPaths[i];
@@ -720,9 +734,11 @@ void pickNewGoodExamples(const char* event_name, const std::vector<std::string>&
             NULL,          // Working directory
             SW_SHOWMAXIMIZED  // Show window maximized (fullscreen)
         );
-        
-        printf("Reviewing: %s (%zu/%zu)\n", path.c_str(), i + 1, filteredPaths.size());
-        
+        char message[256];
+        snprintf(message, sizeof(message), "%s (%d)", window_title.c_str(), filteredDifferences[i]);
+        addOverlayMessage(message, 2.0f);
+        printf("Reviewing: %s (%d)\n", path.c_str(), filteredDifferences[i]);
+        updateOverlay();
         bool validKey = false;
         while (!validKey) {
             if (GetAsyncKeyState(VK_RETURN) & 0x8000) {  // ENTER key
@@ -742,7 +758,7 @@ void pickNewGoodExamples(const char* event_name, const std::vector<std::string>&
                 validKey = true;
                 Sleep(200);
             }
-            Sleep(10);
+            Sleep(10);   
         }
 
         // Close the image viewer window
