@@ -668,7 +668,23 @@ void detectEventsOnScreen(std::vector<Event>& events) {
     free(screenshot);
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    std::string run_mode = "real_time";
+    if (argc > 1) {
+        if(strcmp(argv[1], "help") == 0){
+            printf("\n\nUsage: %s <run_mode> <event_name> <image_path>\n", argv[0]);
+            return 0;
+        }
+        run_mode = argv[1];
+    }
+    if (run_mode != "test_image" && run_mode != "test_images" && run_mode != "real_time") {
+        printf("\n\nInvalid run mode. Valid modes are:\n");
+        printf("  test_image   - Test single event with an image\n");
+        printf("  test_images  - Test event with directory of images\n"); 
+        printf("  real_time    - Detect events on screen in real-time\n");
+        return 1;
+    }
+
     printf("Program starting...\n");
     printf("Initializing CUDA...\n");
     
@@ -682,10 +698,24 @@ int main() {
 
     std::vector<Event> events = initEvents();
 
-    //testEventWithImage(events, "PLANT", "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/PLANT/frame_318.641.png");
-    //std::pair<std::vector<std::string>, std::vector<int>> notMatched = testEventWithImages(events, "1KILL", "./images/Counter-strike 2 2024.11.17 - 23.00.49.02/");
-    //pickNewGoodExamples("1KILL", notMatched.first, notMatched.second);
-    detectEventsOnScreen(events);
+    if (run_mode == "test_image"){
+        if (argc < 4) {
+            printf("Usage: %s <event_name> <image_path>\n", argv[0]);
+            return 1;
+        }
+        testEventWithImage(events, argv[2], argv[3]);
+    }
+    else if (run_mode == "test_images"){
+        if (argc < 4) {
+            printf("Usage: %s <run_mode> <event_name> <test_images_dir>\n", argv[0]);
+            return 1;
+        }
+        std::pair<std::vector<std::string>, std::vector<int>> notMatched = testEventWithImages(events, argv[2], argv[3]);
+        pickNewGoodExamples(argv[2], notMatched.first, notMatched.second);
+    }
+    else if (run_mode == "real_time"){
+        detectEventsOnScreen(events);
+    }
 
     // Cleanup and exit
     for (auto& event : events) {
