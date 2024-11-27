@@ -6,6 +6,7 @@
 #include <thread>
 #include <vector>
 #include <stdexcept>
+#include <dwmapi.h>
 
 
 #ifdef _WIN32
@@ -40,6 +41,149 @@ struct Event {
     const int diff_threshold;
     const float delay;
 };
+
+float getCurrentTime() {
+    auto now = std::chrono::high_resolution_clock::now();
+    auto duration = now.time_since_epoch();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() / 1000.0f;
+}
+
+struct OverlayText {
+    std::string message;
+    float duration;
+    float start_time;
+};
+
+HWND overlayWindow = NULL;
+std::vector<OverlayText> activeMessages;
+float lastOverlayUpdated = 0.0f;
+
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hwnd, &ps);
+
+            // Clear the window
+            RECT rect;
+            GetClientRect(hwnd, &rect);
+            SetBkColor(hdc, RGB(0, 0, 0));
+            ExtTextOut(hdc, 0, 0, ETO_OPAQUE, &rect, NULL, 0, NULL);
+
+            // Set up transparent background
+            SetBkMode(hdc, TRANSPARENT);
+            // Create a rounded gray background for text
+            HBRUSH hBrush = CreateSolidBrush(RGB(64, 64, 64)); // Dark gray
+            HPEN hPen = CreatePen(PS_SOLID, 1, RGB(64, 64, 64));
+            SelectObject(hdc, hBrush);
+            SelectObject(hdc, hPen);
+            
+            // Draw rounded rectangle for each message
+            float currentTime = getCurrentTime();
+            int y = 10;
+            for (const auto& msg : activeMessages) {
+                if (currentTime - msg.start_time < msg.duration) {
+                    int textWidth = msg.message.length() * 24;
+                    int topLeftX = 10;
+                    int topLeftY = y;
+                    int bottomRightX = topLeftX*2 + textWidth;
+                    int bottomRightY = topLeftY + 48;
+                    RoundRect(hdc, topLeftX, topLeftY, bottomRightX, bottomRightY, 20, 20);
+                    y += 60;
+                }
+            }
+            
+            DeleteObject(hBrush);
+            DeleteObject(hPen);
+            // Configure text style
+            SetTextColor(hdc, RGB(255, 255, 255));  // White text
+            HFONT hFont = CreateFont(48, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                                   DEFAULT_CHARSET, OUT_OUTLINE_PRECIS,
+                                   CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                   DEFAULT_PITCH | FF_DONTCARE, "Consolas");
+            HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+
+            // Draw all active messages
+            y = 10;  // Starting Y position
+            for (auto it = activeMessages.begin(); it != activeMessages.end();) {
+                if (currentTime - it->start_time < it->duration) {
+                    RECT rect = {20, y, SCREEN_WIDTH, y + 60};
+                    DrawTextA(hdc, it->message.c_str(), -1, &rect, DT_LEFT | DT_NOCLIP);
+                    y += 60;  // Move down for next message
+                    ++it;
+                } else {
+                    it = activeMessages.erase(it);
+                }
+            }
+
+            SelectObject(hdc, hOldFont);
+            DeleteObject(hFont);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        default:
+            return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    }
+}
+
+void initOverlay() {
+    WNDCLASSEX wc = {0};
+    wc.cbSize = sizeof(WNDCLASSEX);
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = "OverlayClass";
+    RegisterClassEx(&wc);
+
+    // Create the window with additional styles
+    overlayWindow = CreateWindowEx(
+        WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE,  // Added WS_EX_NOACTIVATE
+        "OverlayClass",
+        "Overlay",
+        WS_POPUP,
+        0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,
+        NULL, NULL, GetModuleHandle(NULL), NULL
+    );
+
+    // Set window to always be on top with highest priority
+    SetWindowPos(overlayWindow, 
+                HWND_TOPMOST,
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+    SetLayeredWindowAttributes(overlayWindow, 0, 255, LWA_ALPHA);
+
+    // Enable click-through
+    MARGINS margins = {-1};
+    DwmExtendFrameIntoClientArea(overlayWindow, &margins);
+
+    ShowWindow(overlayWindow, SW_SHOW);
+    UpdateWindow(overlayWindow);
+}
+
+void addOverlayMessage(const char* message, float duration = 1.0f) {
+    OverlayText text = {message, duration, getCurrentTime()};
+    activeMessages.push_back(text);
+    InvalidateRect(overlayWindow, NULL, TRUE);
+}
+
+void updateOverlay() {
+     float currentTime = getCurrentTime();
+     if (lastOverlayUpdated == 0.0f) {
+        lastOverlayUpdated = currentTime;
+        return;
+     }
+     if (currentTime - lastOverlayUpdated < 0.25f) {
+         return;
+     }
+
+     lastOverlayUpdated = currentTime;
+     InvalidateRect(overlayWindow, NULL, TRUE);
+     MSG msg;
+     while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+         TranslateMessage(&msg);
+         DispatchMessage(&msg);
+     }
+}
 
 unsigned char* loadImage(const char* filename, int* width, int* height) {
     int channels;
@@ -163,12 +307,6 @@ void playSound(const char* sound_path) {
 }
 #endif
 
-
-float getCurrentTime() {
-    auto now = std::chrono::high_resolution_clock::now();
-    auto duration = now.time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() / 1000.0f;
-}
 
 bool initCUDA() {
     int deviceCount;
@@ -380,7 +518,7 @@ std::vector<Event> initEvents() {
         {
             "PLANT",
             0.0f,
-            "!!!Bomb has been planted!!!",
+            "Bomb has been planted",
             "./images/planted_example.png",
             "./sounds/planted.wav",
             nullptr,
@@ -393,7 +531,7 @@ std::vector<Event> initEvents() {
         {
             "WON",
             0.0f,
-            "!!!Win!!!",
+            "Won",
             "./images/won_example.png",
             "./sounds/won.wav",
             nullptr,
@@ -406,7 +544,7 @@ std::vector<Event> initEvents() {
         {
             "1KILL",
             0.0f,
-            "!!!1st kill!!!",
+            "1st kill",
             "./images/kill1_example.png",
             "./sounds/kill1.wav",
             nullptr,
@@ -624,6 +762,7 @@ void detectEventsOnScreen(std::vector<Event>& events) {
     unsigned char* screenshot = nullptr;
 
     printf("Starting main loop. Press ESC to exit.\n");
+                        
     while (running && errorCount < MAX_ERRORS) {
         try {
             float current_time = getCurrentTime();
@@ -644,6 +783,7 @@ void detectEventsOnScreen(std::vector<Event>& events) {
                 if (is_match) {
                     float time_since_last = current_time - event.last_time;
                     if (time_since_last > event.delay) {
+                        addOverlayMessage(event.message, 3.0f);  // Add overlay message instead of printf
                         printf("%s\n", event.message);
                         if (!NO_SOUNDS && event.sound_path != nullptr) {
                            playSound(event.sound_path);
@@ -659,6 +799,8 @@ void detectEventsOnScreen(std::vector<Event>& events) {
             }
             
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
+
+            updateOverlay();
         }
         catch (const std::exception& e) {
             printf("Main loop error: %s (%d/%d)\n", e.what(), ++errorCount, MAX_ERRORS);
@@ -714,6 +856,7 @@ int main(int argc, char* argv[]) {
         pickNewGoodExamples(argv[2], notMatched.first, notMatched.second);
     }
     else if (run_mode == "real_time"){
+        initOverlay();  // Initialize the overlay window
         detectEventsOnScreen(events);
     }
 
