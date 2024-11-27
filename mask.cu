@@ -164,7 +164,6 @@ void playSound(const char* sound_path) {
 #endif
 
 
-
 float getCurrentTime() {
     auto now = std::chrono::high_resolution_clock::now();
     auto duration = now.time_since_epoch();
@@ -421,10 +420,11 @@ std::vector<Event> initEvents() {
 
     printf("Loading and processing example images...\n");
     // Load and process example images
+    unsigned char* example_img = nullptr;
+    int width, height;
     for (auto& event : events) {
-        int width, height;
         printf("Loading image: %s\n", event.example_img_path);
-        unsigned char* example_img = loadImage(event.example_img_path, &width, &height);
+        example_img = loadImage(event.example_img_path, &width, &height);
         printf("Loaded image dimensions: %dx%d\n", width, height);
 
         // Process example image
@@ -442,6 +442,7 @@ std::vector<Event> initEvents() {
             event.threshold
         );
     }
+    free(example_img);
     return events;
 }
 
@@ -469,9 +470,10 @@ bool testEventWithImage(const std::vector<Event>& events, const char* event_name
 
     int width, height;
     unsigned char* test_image = loadImage(image_path.c_str(), &width, &height);
-    if (!test_image) {
+        if (!test_image) {
         printf("Failed to load image: %s\n", image_path.c_str());
-        return "";
+        free(test_image);
+        throw std::runtime_error("Failed to load image");
     }
 
     bool matched = isEventMatch(test_image, event);
@@ -625,7 +627,13 @@ void detectEventsOnScreen(std::vector<Event>& events) {
     while (running && errorCount < MAX_ERRORS) {
         try {
             float current_time = getCurrentTime();
-            screenshot = captureScreen(&width, &height);
+            try{
+                screenshot = captureScreen(&width, &height);
+            }
+            catch(const std::exception& e){
+                free(screenshot);
+                throw e;
+            }
 
             for (auto& event : events) {
                 bool is_match = isEventMatch(
