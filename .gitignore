@@ -1,6 +1,8 @@
 sounds/
 images/
+videos/
 mask.exe
 mask.exp
 mask.lib
 ingame.png
+stb_image_write.h
