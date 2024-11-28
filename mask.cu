@@ -531,6 +531,19 @@ std::vector<Event> initEvents() {
     // Initialize events
     std::vector<Event> events = {
         {
+            "DEFUSED",
+            0.0f,
+            "Bomb has been defused",
+            "./images/defused_example.png",
+            "./sounds/defused.wav",
+            nullptr,
+            {1242, 5},
+            {1310, 50},
+            100,
+            150,
+            10.0f
+        },
+        {
             "PLANT",
             0.0f,
             "Bomb has been planted",
@@ -576,10 +589,10 @@ std::vector<Event> initEvents() {
             "./images/kill1_example.png",
             "./sounds/kill1.wav",
             nullptr,
-            {1130, 1250},
-            {1430, 1340},
+            {1160, 1235},
+            {1400, 1335},
             220,
-            500,
+            600,
             0.5f
         },
         {
@@ -589,10 +602,10 @@ std::vector<Event> initEvents() {
             "./images/kill2_example.png",
             "./sounds/kill2.wav",
             nullptr,
-            {1130, 1200},
-            {1430, 1350},
+            {1160, 1235},
+            {1400, 1335},
             220,
-            1000,
+            600,
             0.5f
         },
         {
@@ -602,10 +615,10 @@ std::vector<Event> initEvents() {
             "./images/kill3_example.png",
             "./sounds/kill3.wav",
             nullptr,
-            {1130, 1200},
-            {1430, 1350},
+            {1160, 1235},
+            {1400, 1335},
             220,
-            1000,
+            600,
             0.5f
         },
         {
@@ -615,10 +628,10 @@ std::vector<Event> initEvents() {
             "./images/kill4_example.png",
             "./sounds/kill4.wav",
             nullptr,
-            {1130, 1200},
-            {1430, 1350},
+            {1160, 1235},
+            {1400, 1335},
             220,
-            1000,
+            600,
             0.5f
         },
         {
@@ -628,10 +641,10 @@ std::vector<Event> initEvents() {
             "./images/kill5_example.png",
             "./sounds/kill5.wav",
             nullptr,
-            {1130, 1200},
-            {1430, 1350},
+            {1160, 1235},
+            {1400, 1335},
             220,
-            1000,
+            600,
             0.5f
         }
     };
