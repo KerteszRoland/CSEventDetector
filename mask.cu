@@ -25,9 +25,10 @@
 #define SCREEN_WIDTH 2560
 #define SCREEN_HEIGHT 1440 
 
-#define DEBUG_MODE true
+#define DEBUG_MODE false
 #define NO_SOUNDS true
 #define OVERLAY_ENABLED true
+#define IN_GAME false
 
 struct Event {
     const char* name;
@@ -575,10 +576,62 @@ std::vector<Event> initEvents() {
             "./images/kill1_example.png",
             "./sounds/kill1.wav",
             nullptr,
-            {1150, 1200},
-            {1325, 1332},
-            180,
-            2000,
+            {1130, 1250},
+            {1430, 1340},
+            220,
+            500,
+            0.5f
+        },
+        {
+            "2KILL",
+            0.0f,
+            "2nd kill",
+            "./images/kill2_example.png",
+            "./sounds/kill2.wav",
+            nullptr,
+            {1130, 1200},
+            {1430, 1350},
+            220,
+            1000,
+            0.5f
+        },
+        {
+            "3KILL",
+            0.0f,
+            "3rd kill",
+            "./images/kill3_example.png",
+            "./sounds/kill3.wav",
+            nullptr,
+            {1130, 1200},
+            {1430, 1350},
+            220,
+            1000,
+            0.5f
+        },
+        {
+            "4KILL",
+            0.0f,
+            "4th kill",
+            "./images/kill4_example.png",
+            "./sounds/kill4.wav",
+            nullptr,
+            {1130, 1200},
+            {1430, 1350},
+            220,
+            1000,
+            0.5f
+        },
+        {
+            "5KILL",
+            0.0f,
+            "5th kill",
+            "./images/kill5_example.png",
+            "./sounds/kill5.wav",
+            nullptr,
+            {1130, 1200},
+            {1430, 1350},
+            220,
+            1000,
             0.5f
         }
     };
@@ -791,12 +844,29 @@ void detectEventsOnScreen(std::vector<Event>& events) {
     unsigned char* screenshot = nullptr;
 
     printf("Starting main loop. Press ESC to exit.\n");
-                        
     while (running && errorCount < MAX_ERRORS) {
         try {
             float current_time = getCurrentTime();
             try{
                 screenshot = captureScreen(&width, &height);
+                if (IN_GAME) {
+                    unsigned char* resized = (unsigned char*)malloc(SCREEN_WIDTH * SCREEN_HEIGHT * 3);
+                    for (int y = 0; y < SCREEN_HEIGHT; y++) {
+                        for (int x = 0; x < SCREEN_WIDTH; x++) {
+                            int src_x = x * 1920 / SCREEN_WIDTH;
+                            int src_y = y * 1440 / SCREEN_HEIGHT;
+                            for (int c = 0; c < 3; c++) {
+                                resized[(y * SCREEN_WIDTH + x) * 3 + c] = 
+                                    screenshot[(src_y * width + src_x) * 3 + c];
+                            }
+                        }
+                    }
+                    free(screenshot);
+                    screenshot = resized;
+                    width = SCREEN_WIDTH;
+                    height = SCREEN_HEIGHT;
+
+                }
             }
             catch(const std::exception& e){
                 free(screenshot);
@@ -808,7 +878,7 @@ void detectEventsOnScreen(std::vector<Event>& events) {
                     screenshot,
                     event
                 );
-                
+
                 if (is_match) {
                     float time_since_last = current_time - event.last_time;
                     if (time_since_last > event.delay) {
