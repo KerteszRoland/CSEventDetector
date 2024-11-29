@@ -5,6 +5,8 @@ I built a system that can detect events on the screen while playing a game by us
 The system is capable of running in real time and in my setup, I can run it while playing a game.
 I gathered example images from Counter Strike 2, but you can use it for anything that is based on an event that appears on the screen.
 
+[Slides](https://drive.google.com/drive/folders/1ZZykoV-DxckxmGlggyy43D2z74HiIiE0?usp=sharing)
+
 ## Code Structure
 
 ### Main Function
