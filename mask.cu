@@ -25,7 +25,7 @@
 #define SCREEN_WIDTH 2560
 #define SCREEN_HEIGHT 1440 
 
-#define DEBUG_MODE false
+#define DEBUG_MODE true
 #define NO_SOUNDS true
 #define OVERLAY_ENABLED true
 #define IN_GAME false
@@ -605,8 +605,8 @@ std::vector<Event> initEvents() {
             {1160, 1235},
             {1400, 1335},
             220,
-            600,
-            0.5f
+            970,
+            2.0f
         },
         {
             "3KILL",
@@ -618,7 +618,7 @@ std::vector<Event> initEvents() {
             {1160, 1235},
             {1400, 1335},
             220,
-            600,
+            1000,
             0.5f
         },
         {
